@@ -25,6 +25,8 @@ class Canvas {
 
 		// Begin drawing on the canvas context
 		this.ctx.beginPath();
+		console.log(this.client_x, this.client_y)
+
 
 		this.ctx.arc(this.client_x, this.client_y, this.radius, 0, 2*Math.PI, false);
 		this.ctx.fillStyle = "green";
@@ -40,6 +42,7 @@ class Canvas {
 
 		// Begin drawing on the canvas context
 		this.ctx.beginPath();
+
 
 		this.ctx.arc(this.server_x, this.server_y, this.radius, 0, 2*Math.PI, false);
 		this.ctx.fillStyle = "red";
@@ -60,45 +63,120 @@ class Canvas {
 
 class Movement {
 	constructor() {
-		this.left = false;
-		this.right = false;
-		this.up = false;
-		this.down = false;
+		this.prev = {
+			"left": false,
+			"right": false,
+			"up": false,
+			"down": false
+		}
+
+		this.next = {
+			"left": false,
+			"right": false,
+			"up": false,
+			"down": false
+		}
 
 		this.bindKeys();
 	}
 
 	bindKeys() {
 		document.addEventListener("keydown", (e) => {
-			if (e.key == "w") this.up = true
-			else if (e.key == "s") this.down = true
-			else if (e.key == "a") this.left = true
-			else if (e.key == "d") this.right = true
+			if (e.key == "w") this.next.up = true
+			else if (e.key == "s") this.next.down = true
+			else if (e.key == "a") this.next.left = true
+			else if (e.key == "d") this.next.right = true
 		});
 
 		document.addEventListener("keyup", (e) => {
-			if (e.key == "w") this.up = false
-			else if (e.key == "s") this.down = false
-			else if (e.key == "a") this.left = false
-			else if (e.key == "d") this.right = false
+			if (e.key == "w") this.next.up = false
+			else if (e.key == "s") this.next.down = false
+			else if (e.key == "a") this.next.left = false
+			else if (e.key == "d") this.next.right = false
 		});
+	}
+
+	update() {
+		for (dir in this.prev) {
+			this.prev[dir] = this.next[dir];
+		}
 	}
 }
 
-// Initiate classes
+class WS extends WebSocket {
+	constructor() {
+		super("ws://0.0.0.0:8080")
 
-let canvas = new Canvas(),
-	movement = new Movement();
+		this.onopen = () => {
+            console.log("[open] Connection established");
+            this.message_queue = [];
+            this.x = 0;
+            this.y = 0;
+		}
 
-updatePosition = function(canvas_class, movement_class) {
-	console.log(movement_class)
-	if (movement_class.left) canvas_class.client_x --;
-	else if (movement.right) canvas_class.client_x ++;
-	else if (movement.up) canvas_class.client_y --;
-	else if (movement.down) canvas_class.client_y ++;
+		this.onmessage = (event) => {
+			let data = JSON.parse(event.data);
+			this.message_queue.push(data);
+		}
+	}
+
+	readMessage() {
+		this.message_queue.map( (p) => {
+			this.parse(p);
+		})
+	}
+
+    sendServer(packet) {
+        console.log("sent", packet);
+        this.send(JSON.stringify(packet));
+    }
+
+	parse(msg) {
+		switch(msg.type) {
+			case "pos": 
+				this.x = msg.x;
+				this.y = msg.y;
+			break;
+		}
+	}
 }
 
-setInterval( () => {
+updatePosition = function(canvas_class, movement_class) {
+	if (movement_class.prev.left) canvas_class.client_x --;
+	else if (movement_class.prev.right) canvas_class.client_x ++;
+	else if (movement_class.prev.up) canvas_class.client_y --;
+	else if (movement_class.prev.down) canvas_class.client_y ++;
+}
+
+serverPosition = function(canvas_class, ws_class) {
+	canvas_class.server_x = ws_class.x;
+	canvas_class.server_y = ws_class.y;
+}
+
+sendMovement = function(movement_class, ws_class) {
+	for (dir in movement_class.prev) {
+		if (movement_class.prev[dir] != movement_class.next[dir]) {
+			ws_class.sendServer({
+				"type": "move",
+				"dir": dir,
+				"status": movement_class.next[dir]
+			});
+		}
+	}
+}
+
+tick = function() {
+	sendMovement(movement, ws);
+	movement.update();
+	ws.readMessage();
 	updatePosition(canvas, movement);
+	serverPosition(canvas, ws);
 	canvas.drawTick();
-})
+}
+
+// Initiate classes
+let canvas = new Canvas(),
+	movement = new Movement(),
+	ws = new WS();
+
+setInterval( () => tick(), 1000/60 )
