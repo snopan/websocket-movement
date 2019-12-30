@@ -10,10 +10,6 @@ class WSS extends WebSocket.Server {
 
 			ws.message_queue = [];
 
-			ws.left = false;
-			ws.right = false;
-			ws.up = false;
-			ws.down = false;
 			ws.x = 0;
 			ws.y = 0;
 
@@ -41,13 +37,25 @@ class WSS extends WebSocket.Server {
 		ws.message_queue.map( (p) => {
 			this.parse(ws, p);
 		})
+
+		ws.message_queue = [];
 	}
 
-	updatePos(ws) {
-		if (ws.left) ws.x --;
-		else if (ws.right) ws.x ++;
-		else if (ws.up) ws.y --;
-		else if (ws.down) ws.y ++;
+	updatePos(ws, dir) {
+		switch (dir) {
+			case "left":
+				ws.x --;
+			break;
+			case "right":
+				ws.x ++;
+			break;
+			case "up":
+				ws.y --;
+			break;
+			case "down":
+				ws.y ++;
+			break;
+		}
 	}
 
 	updateClient(ws) {
@@ -60,8 +68,10 @@ class WSS extends WebSocket.Server {
 
 	parse(ws, msg) {
 		switch(msg.type) {
-			case "move":
-				ws[msg.dir] = msg.status;
+			case "actions":
+				msg.ticks.map( (tick_dir) => {
+					this.updatePos(ws, tick_dir);
+				})
 			break;
 		}
 	}
@@ -69,7 +79,6 @@ class WSS extends WebSocket.Server {
 	tick() {
 		this.loopClients( (client) => {
 			this.readMessage(client);
-			this.updatePos(client);
 			this.updateClient(client);
 		})
 	}

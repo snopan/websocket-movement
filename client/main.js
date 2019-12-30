@@ -25,8 +25,6 @@ class Canvas {
 
 		// Begin drawing on the canvas context
 		this.ctx.beginPath();
-		console.log(this.client_x, this.client_y)
-
 
 		this.ctx.arc(this.client_x, this.client_y, this.radius, 0, 2*Math.PI, false);
 		this.ctx.fillStyle = "green";
@@ -63,18 +61,14 @@ class Canvas {
 
 class Movement {
 	constructor() {
-		this.prev = {
-			"left": false,
-			"right": false,
-			"up": false,
-			"down": false
-		}
+		this.left = false;
+		this.right = false;
+		this.up = false;
+		this.down = false;
 
-		this.next = {
-			"left": false,
-			"right": false,
-			"up": false,
-			"down": false
+		this.actions = {
+			"moved": false,
+			"ticks": []
 		}
 
 		this.bindKeys();
@@ -82,30 +76,29 @@ class Movement {
 
 	bindKeys() {
 		document.addEventListener("keydown", (e) => {
-			if (e.key == "w") this.next.up = true
-			else if (e.key == "s") this.next.down = true
-			else if (e.key == "a") this.next.left = true
-			else if (e.key == "d") this.next.right = true
+			if (e.key == "w") this.up = true
+			else if (e.key == "s") this.down = true
+			else if (e.key == "a") this.left = true
+			else if (e.key == "d") this.right = true
 		});
 
 		document.addEventListener("keyup", (e) => {
-			if (e.key == "w") this.next.up = false
-			else if (e.key == "s") this.next.down = false
-			else if (e.key == "a") this.next.left = false
-			else if (e.key == "d") this.next.right = false
+			if (e.key == "w") this.up = false 
+			else if (e.key == "s") this.down = false
+			else if (e.key == "a") this.left = false
+			else if (e.key == "d") this.right = false
 		});
 	}
 
-	update() {
-		for (dir in this.prev) {
-			this.prev[dir] = this.next[dir];
-		}
+	clearBuffer() {
+		this.actions.moved = false;
+		this.actions.ticks = [];
 	}
 }
 
 class WS extends WebSocket {
 	constructor() {
-		super("ws://0.0.0.0:8080")
+		super("ws://localhost:8080")
 
 		this.onopen = () => {
             console.log("[open] Connection established");
@@ -127,7 +120,7 @@ class WS extends WebSocket {
 	}
 
     sendServer(packet) {
-        console.log("sent", packet);
+    	console.log(packet)
         this.send(JSON.stringify(packet));
     }
 
@@ -142,10 +135,10 @@ class WS extends WebSocket {
 }
 
 updatePosition = function(canvas_class, movement_class) {
-	if (movement_class.prev.left) canvas_class.client_x --;
-	else if (movement_class.prev.right) canvas_class.client_x ++;
-	else if (movement_class.prev.up) canvas_class.client_y --;
-	else if (movement_class.prev.down) canvas_class.client_y ++;
+	if (movement_class.left) canvas_class.client_x --;
+	else if (movement_class.right) canvas_class.client_x ++;
+	else if (movement_class.up) canvas_class.client_y --;
+	else if (movement_class.down) canvas_class.client_y ++;
 }
 
 serverPosition = function(canvas_class, ws_class) {
@@ -153,30 +146,61 @@ serverPosition = function(canvas_class, ws_class) {
 	canvas_class.server_y = ws_class.y;
 }
 
-sendMovement = function(movement_class, ws_class) {
-	for (dir in movement_class.prev) {
-		if (movement_class.prev[dir] != movement_class.next[dir]) {
-			ws_class.sendServer({
-				"type": "move",
-				"dir": dir,
-				"status": movement_class.next[dir]
-			});
-		}
+sendBufferedTicks = function(movement_class, ws_class) {
+	if (movement_class.actions.moved) {
+		ws_class.sendServer({
+			"type": "actions",
+			"ticks": movement_class.actions.ticks
+		})
+	}
+
+	movement_class.clearBuffer();
+}
+
+checkMoving = function(movement_class) {
+	if (movement_class.left) holdTick(movement_class, "left");
+	else if (movement_class.right) holdTick(movement_class, "right");
+	else if (movement_class.up) holdTick(movement_class, "up");
+	else if (movement_class.down) holdTick(movement_class, "down");
+	else {
+
+		// Not moving in this tick
+		movement_class.actions.ticks.push("");
 	}
 }
 
+holdTick = function(movement_class, dir) {
+
+	// There is a moving tick so 
+	// send to server for evaluation
+	movement_class.actions.moved = true;
+
+	// Add to history of where it was moving towards
+	movement_class.actions.ticks.push(dir)
+}
+
 tick = function() {
-	sendMovement(movement, ws);
-	movement.update();
+	ticksPassed ++;
+
+	checkMoving(movement);
+
+	if ((ticksPassed % 10) == 0) {
+		sendBufferedTicks(movement, ws);
+	}
+
 	ws.readMessage();
 	updatePosition(canvas, movement);
 	serverPosition(canvas, ws);
+
 	canvas.drawTick();
+
+
 }
 
 // Initiate classes
 let canvas = new Canvas(),
 	movement = new Movement(),
-	ws = new WS();
+	ws = new WS(),
+	ticksPassed = 0;
 
 setInterval( () => tick(), 1000/60 )
